@@ -1,3 +1,4 @@
+
 import pyautogui
 import random
 import time
@@ -12,9 +13,9 @@ from pynput import keyboard
 # CONFIGURATION
 # ==================================================
 
-RUN_DURATION = 24 * 60 * 60  # 24 hours
+RUN_DURATION = 24 * 60 * 60 * 10 # 24 hours
 
-# Mouse movement settings
+# Mouse movement
 MIN_MOVE_DURATION = 1.5
 MAX_MOVE_DURATION = 4.5
 
@@ -23,12 +24,14 @@ MAX_IDLE_TIME = 6.0
 
 MARGIN = 80
 
-# Periodic clicking settings
+# Double-click configuration
 CLICK_ENABLED = True
-CLICK_INTERVAL = 120       # 2 minutes
-CLICK_RANDOMNESS = 5       # +/- 5 seconds
+CLICK_INTERVAL = 120          # 2 minutes
+CLICK_RANDOMNESS = 5          # +/- 5 seconds
+CLICKS_PER_CYCLE = 2
+DOUBLE_CLICK_DELAY = 2        # 2 seconds apart
 
-# Windows power management constants
+# Windows power management
 ES_CONTINUOUS = 0x80000000
 ES_SYSTEM_REQUIRED = 0x00000001
 
@@ -93,7 +96,7 @@ def get_random_position():
 
 
 # ==================================================
-# PAUSE / RESUME HANDLING
+# PAUSE / RESUME
 # ==================================================
 
 def wait_while_paused():
@@ -108,21 +111,24 @@ def toggle_pause():
         return
 
     if pause_event.is_set():
+
         pause_event.clear()
         print("\n[RESUMED] Mouse movement restarted.")
 
     else:
+
         pause_event.set()
         print("\n[PAUSED] Mouse movement suspended.")
 
 
 # ==================================================
-# STOP HANDLING
+# STOP APPLICATION
 # ==================================================
 
 def stop_application():
 
     if not stop_event.is_set():
+
         print("\n[STOP] Stop command received.")
         stop_event.set()
 
@@ -149,9 +155,12 @@ def move_naturally(start, end):
     midpoint_y = (y1 + y2) / 2
 
     if distance > 0:
+
         perpendicular_x = -(y2 - y1) / distance
         perpendicular_y = (x2 - x1) / distance
+
     else:
+
         perpendicular_x = 0
         perpendicular_y = 0
 
@@ -172,10 +181,12 @@ def move_naturally(start, end):
 
         t = step / steps
 
+        # Smooth acceleration and deceleration
         smooth_t = t * t * (3 - 2 * t)
 
         one_minus_t = 1 - smooth_t
 
+        # Quadratic Bezier curve
         x = (
             one_minus_t ** 2 * x1
             + 2 * one_minus_t * smooth_t * control_x
@@ -204,7 +215,7 @@ def move_naturally(start, end):
 
 
 # ==================================================
-# PERIODIC SINGLE CLICK
+# DOUBLE-CLICK FUNCTION
 # ==================================================
 
 def perform_periodic_click():
@@ -217,14 +228,45 @@ def perform_periodic_click():
     if stop_event.is_set():
         return
 
+    # Capture current position for both clicks
     position = pyautogui.position()
 
-    pyautogui.click(button="left")
+    for click_number in range(1, CLICKS_PER_CYCLE + 1):
 
-    print(
-        f"[CLICK] Single left-click at {position} "
-        f"| {time.strftime('%H:%M:%S')}"
-    )
+        wait_while_paused()
+
+        if stop_event.is_set():
+            return
+
+        # Keep both clicks at the same position
+        pyautogui.click(
+            x=position.x,
+            y=position.y,
+            button="left"
+        )
+
+        print(
+            f"[CLICK] Click {click_number}/{CLICKS_PER_CYCLE} "
+            f"at {position} | {time.strftime('%H:%M:%S')}"
+        )
+
+        # Wait exactly 2 seconds between clicks
+        if click_number < CLICKS_PER_CYCLE:
+
+            wait_until = (
+                time.monotonic() + DOUBLE_CLICK_DELAY
+            )
+
+            while time.monotonic() < wait_until:
+
+                wait_while_paused()
+
+                if stop_event.is_set():
+                    return
+
+                remaining = wait_until - time.monotonic()
+
+                stop_event.wait(min(0.1, remaining))
 
 
 # ==================================================
@@ -271,8 +313,9 @@ def main():
 
         print("Operating duration : 24 hours")
         print("Movement           : Natural curved movement")
-        print("Periodic clicking  : Every 2 minutes")
-        print("Click type         : Single left-click")
+        print("Clicking           : Two left-clicks per cycle")
+        print("Click interval     : Approximately 2 minutes")
+        print("Time between clicks: 2 seconds")
         print("Power protection   : Enabled")
         print("Startup            : Manual")
 
@@ -282,16 +325,18 @@ def main():
 
         print("\nStarting application...\n")
 
-        # Prevent Windows from sleeping
+        # Prevent Windows from automatically sleeping
         set_execution_state = keep_computer_awake()
 
-        # Activate keyboard shortcuts
+        # Activate global keyboard shortcuts
         listener = start_keyboard_listener()
 
         current_position = pyautogui.position()
 
-        # Schedule the first click
-        next_click_time = time.monotonic() + CLICK_INTERVAL
+        # Schedule first double-click
+        next_click_time = (
+            time.monotonic() + CLICK_INTERVAL
+        )
 
         print("[RUNNING] Mouse movement active.")
 
@@ -300,6 +345,7 @@ def main():
             remaining = end_time - time.monotonic()
 
             if remaining <= 0:
+
                 print("\n[COMPLETE] 24-hour duration reached.")
                 break
 
@@ -308,7 +354,7 @@ def main():
             if stop_event.is_set():
                 break
 
-            # Check periodic click schedule
+            # Check double-click schedule
             if time.monotonic() >= next_click_time:
 
                 perform_periodic_click()
@@ -322,10 +368,13 @@ def main():
                     )
                 )
 
-            # Select a new cursor destination
+            if stop_event.is_set():
+                break
+
+            # Generate next cursor destination
             destination = get_random_position()
 
-            # Execute natural movement
+            # Move cursor naturally
             move_naturally(
                 current_position,
                 destination
@@ -336,7 +385,7 @@ def main():
 
             current_position = destination
 
-            # Wait briefly before the next movement
+            # Short random idle period
             idle_time = random.uniform(
                 MIN_IDLE_TIME,
                 MAX_IDLE_TIME
@@ -363,6 +412,7 @@ def main():
         stop_event.set()
 
         if listener:
+
             listener.stop()
             listener.join(timeout=2)
 
