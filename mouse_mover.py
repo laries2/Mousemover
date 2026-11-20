@@ -1,4 +1,3 @@
-
 import pyautogui
 import random
 import time
@@ -9,12 +8,13 @@ import platform
 from pynput import keyboard
 
 
-# ==========================================
+# ==================================================
 # CONFIGURATION
-# ==========================================
+# ==================================================
 
-RUN_DURATION = 24 * 60 * 60 * 10  # 24 hours
+RUN_DURATION = 24 * 60 * 60  # 24 hours
 
+# Mouse movement settings
 MIN_MOVE_DURATION = 1.5
 MAX_MOVE_DURATION = 4.5
 
@@ -23,11 +23,16 @@ MAX_IDLE_TIME = 6.0
 
 MARGIN = 80
 
-# Windows execution-state constants
+# Periodic clicking settings
+CLICK_ENABLED = True
+CLICK_INTERVAL = 120       # 2 minutes
+CLICK_RANDOMNESS = 5       # +/- 5 seconds
+
+# Windows power management constants
 ES_CONTINUOUS = 0x80000000
 ES_SYSTEM_REQUIRED = 0x00000001
 
-# Shared application controls
+# Application controls
 stop_event = threading.Event()
 pause_event = threading.Event()
 
@@ -35,12 +40,11 @@ pyautogui.FAILSAFE = True
 pyautogui.PAUSE = 0
 
 
-# ==========================================
+# ==================================================
 # WINDOWS POWER MANAGEMENT
-# ==========================================
+# ==================================================
 
 def keep_computer_awake():
-    """Prevent Windows from automatically sleeping."""
 
     if platform.system() != "Windows":
         raise RuntimeError("This application requires Windows.")
@@ -64,7 +68,6 @@ def keep_computer_awake():
 
 
 def restore_power_settings(set_execution_state):
-    """Restore normal Windows power-management behavior."""
 
     if set_execution_state:
         set_execution_state(ES_CONTINUOUS)
@@ -72,9 +75,9 @@ def restore_power_settings(set_execution_state):
     print("[POWER] Normal power management restored.")
 
 
-# ==========================================
+# ==================================================
 # SCREEN COORDINATES
-# ==========================================
+# ==================================================
 
 def get_random_position():
 
@@ -89,9 +92,44 @@ def get_random_position():
     return x, y
 
 
-# ==========================================
+# ==================================================
+# PAUSE / RESUME HANDLING
+# ==================================================
+
+def wait_while_paused():
+
+    while pause_event.is_set() and not stop_event.is_set():
+        stop_event.wait(0.2)
+
+
+def toggle_pause():
+
+    if stop_event.is_set():
+        return
+
+    if pause_event.is_set():
+        pause_event.clear()
+        print("\n[RESUMED] Mouse movement restarted.")
+
+    else:
+        pause_event.set()
+        print("\n[PAUSED] Mouse movement suspended.")
+
+
+# ==================================================
+# STOP HANDLING
+# ==================================================
+
+def stop_application():
+
+    if not stop_event.is_set():
+        print("\n[STOP] Stop command received.")
+        stop_event.set()
+
+
+# ==================================================
 # NATURAL CURSOR MOVEMENT
-# ==========================================
+# ==================================================
 
 def move_naturally(start, end):
 
@@ -100,20 +138,16 @@ def move_naturally(start, end):
 
     distance = math.hypot(x2 - x1, y2 - y1)
 
-    # Determine movement duration
     duration = random.uniform(
         MIN_MOVE_DURATION,
         MAX_MOVE_DURATION
     )
 
-    # More distance means more intermediate points
     steps = max(25, min(180, int(distance / 8)))
 
-    # Generate a curved path using a quadratic Bezier curve
     midpoint_x = (x1 + x2) / 2
     midpoint_y = (y1 + y2) / 2
 
-    # Perpendicular offset creates a natural curved trajectory
     if distance > 0:
         perpendicular_x = -(y2 - y1) / distance
         perpendicular_y = (x2 - x1) / distance
@@ -131,7 +165,6 @@ def move_naturally(start, end):
         if stop_event.is_set():
             return
 
-        # Respect pause requests
         wait_while_paused()
 
         if stop_event.is_set():
@@ -139,10 +172,8 @@ def move_naturally(start, end):
 
         t = step / steps
 
-        # Smooth acceleration and deceleration
         smooth_t = t * t * (3 - 2 * t)
 
-        # Quadratic Bezier interpolation
         one_minus_t = 1 - smooth_t
 
         x = (
@@ -157,7 +188,6 @@ def move_naturally(start, end):
             + smooth_t ** 2 * y2
         )
 
-        # Very small trajectory variation
         variation = math.sin(t * math.pi) * 1.2
 
         x += random.uniform(-variation, variation)
@@ -169,52 +199,37 @@ def move_naturally(start, end):
             duration=0
         )
 
-        # Small delay between intermediate points
         if stop_event.wait(duration / steps):
             return
 
 
-# ==========================================
-# PAUSE / RESUME HANDLING
-# ==========================================
+# ==================================================
+# PERIODIC SINGLE CLICK
+# ==================================================
 
-def wait_while_paused():
+def perform_periodic_click():
 
-    while pause_event.is_set() and not stop_event.is_set():
-        stop_event.wait(0.2)
+    if not CLICK_ENABLED or stop_event.is_set():
+        return
 
-
-def toggle_pause():
+    wait_while_paused()
 
     if stop_event.is_set():
         return
 
-    if pause_event.is_set():
+    position = pyautogui.position()
 
-        pause_event.clear()
-        print("\n[RESUMED] Cursor movement restarted.")
+    pyautogui.click(button="left")
 
-    else:
-
-        pause_event.set()
-        print("\n[PAUSED] Cursor movement suspended.")
-
-
-# ==========================================
-# STOP HANDLING
-# ==========================================
-
-def stop_application():
-
-    if not stop_event.is_set():
-
-        print("\n[STOP] Stop command received.")
-        stop_event.set()
+    print(
+        f"[CLICK] Single left-click at {position} "
+        f"| {time.strftime('%H:%M:%S')}"
+    )
 
 
-# ==========================================
+# ==================================================
 # KEYBOARD SHORTCUTS
-# ==========================================
+# ==================================================
 
 def start_keyboard_listener():
 
@@ -228,14 +243,14 @@ def start_keyboard_listener():
 
     hotkeys.start()
 
-    print("[KEYBOARD] Shortcuts activated.")
+    print("[KEYBOARD] Global shortcuts activated.")
 
     return hotkeys
 
 
-# ==========================================
+# ==================================================
 # MAIN APPLICATION
-# ==========================================
+# ==================================================
 
 def main():
 
@@ -250,34 +265,38 @@ def main():
 
     try:
 
-        print("=" * 50)
-        print("       ADVANCED PYTHON MOUSE MOVER")
-        print("=" * 50)
+        print("=" * 55)
+        print("          ADVANCED PYTHON MOUSE MOVER")
+        print("=" * 55)
 
-        print("Operating duration: 24 hours")
-        print("Movement: Natural curved trajectories")
-        print("Power protection: Enabled")
-        print("Startup: Manual")
+        print("Operating duration : 24 hours")
+        print("Movement           : Natural curved movement")
+        print("Periodic clicking  : Every 2 minutes")
+        print("Click type         : Single left-click")
+        print("Power protection   : Enabled")
+        print("Startup            : Manual")
 
-        print("\nKeyboard shortcuts:")
+        print("\nKEYBOARD SHORTCUTS")
         print("CTRL + ALT + P : Pause / Resume")
         print("CTRL + ALT + S : Stop")
 
         print("\nStarting application...\n")
 
-        # Prevent system sleep
+        # Prevent Windows from sleeping
         set_execution_state = keep_computer_awake()
 
-        # Start global keyboard listener
+        # Activate keyboard shortcuts
         listener = start_keyboard_listener()
 
         current_position = pyautogui.position()
+
+        # Schedule the first click
+        next_click_time = time.monotonic() + CLICK_INTERVAL
 
         print("[RUNNING] Mouse movement active.")
 
         while not stop_event.is_set():
 
-            # Check the 24-hour deadline
             remaining = end_time - time.monotonic()
 
             if remaining <= 0:
@@ -289,10 +308,24 @@ def main():
             if stop_event.is_set():
                 break
 
-            # Select next destination
+            # Check periodic click schedule
+            if time.monotonic() >= next_click_time:
+
+                perform_periodic_click()
+
+                next_click_time = (
+                    time.monotonic()
+                    + CLICK_INTERVAL
+                    + random.uniform(
+                        -CLICK_RANDOMNESS,
+                        CLICK_RANDOMNESS
+                    )
+                )
+
+            # Select a new cursor destination
             destination = get_random_position()
 
-            # Move along a curved trajectory
+            # Execute natural movement
             move_naturally(
                 current_position,
                 destination
@@ -303,14 +336,15 @@ def main():
 
             current_position = destination
 
-            # Random interval between movements
+            # Wait briefly before the next movement
             idle_time = random.uniform(
                 MIN_IDLE_TIME,
                 MAX_IDLE_TIME
             )
 
-            # Wait in small increments so stop remains responsive
-            stop_event.wait(min(idle_time, remaining))
+            stop_event.wait(
+                min(idle_time, remaining, 1)
+            )
 
     except KeyboardInterrupt:
 
@@ -318,7 +352,7 @@ def main():
 
     except pyautogui.FailSafeException:
 
-        print("\n[FAILSAFE] Mouse moved to top-left corner.")
+        print("\n[FAILSAFE] Emergency mouse failsafe activated.")
 
     except Exception as error:
 
@@ -330,19 +364,24 @@ def main():
 
         if listener:
             listener.stop()
+            listener.join(timeout=2)
 
         restore_power_settings(set_execution_state)
 
         elapsed = time.monotonic() - start_time
 
-        print("\n" + "=" * 50)
-        print("          APPLICATION TERMINATED")
-        print("=" * 50)
+        print("\n" + "=" * 55)
+        print("             APPLICATION TERMINATED")
+        print("=" * 55)
 
         print(f"Runtime: {elapsed / 3600:.2f} hours")
         print("Mouse mover stopped.")
         print("Windows power management restored.")
 
+
+# ==================================================
+# APPLICATION ENTRY POINT
+# ==================================================
 
 if __name__ == "__main__":
     main()
